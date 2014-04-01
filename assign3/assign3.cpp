@@ -254,8 +254,9 @@ Pixel rayTrace(Ray ray) {
 	
 	// if the ray intersects a sphere
 	if (findIntersectionWithSpheres(ray, pIntersect, nIntersect, s, sIndex)) {
-
-		bool inShadow = false;
+		pixel.x = s.color_diffuse[0];
+		pixel.y = s.color_diffuse[1];
+		pixel.z = s.color_diffuse[2];
 		// for each light source, fire shadow ray
 		for (int i = 0; i < num_lights; i++) {
 			Light l = lights[i];
@@ -263,21 +264,66 @@ Pixel rayTrace(Ray ray) {
 			shadowRay.origin.x = pIntersect.x;
 			shadowRay.origin.y = pIntersect.y;
 			shadowRay.origin.z = pIntersect.z;
+
 			shadowRay.direction.x = l.position[0] - pIntersect.x;
 			shadowRay.direction.y = l.position[1] - pIntersect.y;
 			shadowRay.direction.z = l.position[2] - pIntersect.z;
 
+			double mag = sqrt((shadowRay.direction.x * shadowRay.direction.x) +
+				(shadowRay.direction.y * shadowRay.direction.y) +
+				(shadowRay.direction.z * shadowRay.direction.z));
+
+			// normalize
+			shadowRay.direction.x /= mag;
+			shadowRay.direction.y /= mag;
+			shadowRay.direction.z /= mag;
+
 			// for each unblocked shadow ray, evaluate local phong model for
 			// that light, and add result to pixel color
 			if (!intersectsObject(shadowRay, sIndex)) {
-				pixel.x += s.color_diffuse[0];
-				pixel.y += s.color_diffuse[1];
-				pixel.z += s.color_diffuse[2];
+
+				Ray L = shadowRay;
+
+				point LdotN;
+				LdotN.x = L.direction.x * nIntersect.x;
+				LdotN.y = L.direction.y * nIntersect.y;
+				LdotN.z = L.direction.z * nIntersect.z;
+
+				/*
+				Ray R = L;
+				R.direction.x -= pIntersect.x;
+				R.direction.y -= pIntersect.y;
+				R.direction.z -= pIntersect.z;
+				*/				
+				Ray R = L;
+				R.direction.x = 2 * LdotN.x * nIntersect.x - L.direction.x;
+				R.direction.y = 2 * LdotN.y * nIntersect.y - L.direction.y;
+				R.direction.z = 2 * LdotN.z * nIntersect.z - L.direction.z;
+				double Rmag = sqrt((R.direction.x * R.direction.x)
+					+ (R.direction.y * R.direction.y)
+					+ (R.direction.z * R.direction.z));
+				R.direction.x /= Rmag;
+				R.direction.y /= Rmag;
+				R.direction.z /= Rmag;
+
+				point RdotV;
+				RdotV.x = R.direction.x * -pIntersect.x;
+				RdotV.y = R.direction.y * -pIntersect.y;
+				RdotV.z = R.direction.z * -pIntersect.z;
+				//std::cout << "  x == " << shadowRay.direction.x + shadowRay.direction.y + shadowRay.direction.z;
+
+				double colorX = l.color[0] * ((s.color_diffuse[0] * LdotN.x) + (s.color_specular[0] * RdotV.x));
+				double colorY = l.color[1] * ((s.color_diffuse[1] * LdotN.y) + (s.color_specular[1] * RdotV.y));
+				double colorZ = l.color[2] * ((s.color_diffuse[2] * LdotN.z) + (s.color_specular[2] * RdotV.z));
+
+				pixel.x += colorX;
+				pixel.y += colorY;
+				pixel.z += colorZ;
 			}
 			else {
-				pixel.x = 0;
-				pixel.y = 0;
-				pixel.z = 0;
+				pixel.x = s.color_diffuse[0];
+				pixel.y = s.color_diffuse[1];
+				pixel.z = s.color_diffuse[2];
 			}
 		}
 	}
