@@ -184,9 +184,9 @@ void calculateCorners() {
 Pixel rayTrace(Ray ray) {
 
 	Pixel pixel;
-	pixel.x = 0;
-	pixel.y = 0;
-	pixel.z = 0;
+	pixel.x = 0.3;
+	pixel.y = 0.3;
+	pixel.z = 0.3;
 
 	point pIntersect;
 	normal nIntersect;
@@ -259,10 +259,10 @@ Pixel rayTrace(Ray ray) {
 			/* for each unblocked shadow ray, evaluate local phong model for */
 			/* that light, and add result to pixel color */
 			for (int j = 0; j < num_spheres; j++) {
-				Sphere *sphere = &spheres[j];
+				Sphere sphere = spheres[j];
 				/* determine if shadow ray is blocked by any objects */
 				double dummy;
-				if (!(sphere->rayIntersect(shadowRay, dummy))) {
+				if (!(sphere.rayIntersect(shadowRay, dummy))) {
 
 					Ray L = shadowRay;
 					double LdotN = (L.direction.x * nIntersect.x)
@@ -286,9 +286,10 @@ Pixel rayTrace(Ray ray) {
 						+ (R.direction.y * (-pIntersect.y))
 						+ (R.direction.z * (-pIntersect.z));
 
-					double colorX = l.color[0] * ((s.color_diffuse[0] * LdotN) + (s.color_specular[0] * RdotV));
-					double colorY = l.color[1] * ((s.color_diffuse[1] * LdotN) + (s.color_specular[1] * RdotV));
-					double colorZ = l.color[2] * ((s.color_diffuse[2] * LdotN) + (s.color_specular[2] * RdotV));
+					/* calculate light intensity */
+					double colorX = l.color[0] * ((s.color_diffuse[0] * LdotN) + pow((s.color_specular[0] * RdotV), s.shininess));
+					double colorY = l.color[1] * ((s.color_diffuse[1] * LdotN) + pow((s.color_specular[1] * RdotV), s.shininess));
+					double colorZ = l.color[2] * ((s.color_diffuse[2] * LdotN) + pow((s.color_specular[2] * RdotV), s.shininess));
 
 					/* clamp to 0,1 */
 					/* if color < 0, color = 0, else if color > 1, color = 1, else no change*/
@@ -313,11 +314,8 @@ Pixel rayTrace(Ray ray) {
 	}
 	// if the ray does not intersect a sphere
 	else {
-		pixel.x = 0.4;
-		pixel.y = 0.4;
-		pixel.z = 0.4;
+		/* calculate shadow on background */
 	}
-
 	
 	return pixel;
 }
@@ -342,20 +340,21 @@ void castRays() {
 	std::cout << "image width : " << stepWidth << std::endl;
 	std::cout << "image height : " << imageHeight << std::endl;
 
-	// j = top, while j > bottom, decrement j
+	// j = top; while j > bottom; decrement j
 	int m = 0, n = 0;
 	for (double j = y01 - stepHeight / 2; j > y00 + stepHeight; j -= stepHeight, n++) {
-		// i = left, while i < right, increment i
+		// i = left; while i < right; increment i
 		m = 0;
 		for (double i = x00 + stepWidth / 2; i < x10 - stepWidth; i += stepWidth, m++) {
 
 			double magnitude = sqrt(i*i + j*j + 1); // z = -1, so z*z = 1
+
 			ray.direction.x = i / magnitude;
 			ray.direction.y = j / magnitude;
 			ray.direction.z = -1 / magnitude;
 
 			// trace the ray and assign color
-			pixels[n][m] = rayTrace(ray);
+			pixels[m][n] = rayTrace(ray);
 		}
 	}
 	
@@ -369,14 +368,15 @@ void draw_scene()
 
 	unsigned int x, y;
 	//simple output
-	for (y = 0; y < HEIGHT; y++)
+	for (x = 0; x < WIDTH; x++)
 	{
 		glPointSize(2.0);
 		glBegin(GL_POINTS);
-		for (x = 0; x < WIDTH; x++)
+		for (y = 0; y < HEIGHT; y++)
 		{
-			glColor3f(pixels[y][x].x, pixels[y][x].y, pixels[y][x].z);
-			glVertex2i(x, y);
+			//plot_pixel(x, y, x % 256, y % 256, (x + y) % 256);
+			glColor3f(pixels[x][y].x, pixels[x][y].y, pixels[x][y].z);
+			glVertex2f(x, y);
 		}
 		glEnd();
 		glFlush();
