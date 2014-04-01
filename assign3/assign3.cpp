@@ -260,6 +260,8 @@ Pixel rayTrace(Ray ray) {
 		// for each light source, fire shadow ray
 		for (int i = 0; i < num_lights; i++) {
 			Light l = lights[i];
+
+			// unit vector to the light
 			Ray shadowRay;
 			shadowRay.origin.x = pIntersect.x;
 			shadowRay.origin.y = pIntersect.y;
@@ -284,46 +286,32 @@ Pixel rayTrace(Ray ray) {
 
 				Ray L = shadowRay;
 
-				point LdotN;
-				LdotN.x = L.direction.x * nIntersect.x;
-				LdotN.y = L.direction.y * nIntersect.y;
-				LdotN.z = L.direction.z * nIntersect.z;
+				double LdotN = (L.direction.x * nIntersect.x)
+					+ (L.direction.y * nIntersect.y)
+					+ (L.direction.z * nIntersect.z);
 
-				/*
 				Ray R = L;
-				R.direction.x -= pIntersect.x;
-				R.direction.y -= pIntersect.y;
-				R.direction.z -= pIntersect.z;
-				*/				
-				Ray R = L;
-				R.direction.x = 2 * LdotN.x * nIntersect.x - L.direction.x;
-				R.direction.y = 2 * LdotN.y * nIntersect.y - L.direction.y;
-				R.direction.z = 2 * LdotN.z * nIntersect.z - L.direction.z;
-				double Rmag = sqrt((R.direction.x * R.direction.x)
-					+ (R.direction.y * R.direction.y)
-					+ (R.direction.z * R.direction.z));
-				R.direction.x /= Rmag;
-				R.direction.y /= Rmag;
-				R.direction.z /= Rmag;
+				R.direction.x = 2 * LdotN * nIntersect.x - L.direction.x;
+				R.direction.y = 2 * LdotN * nIntersect.y - L.direction.y;
+				R.direction.z = 2 * LdotN * nIntersect.z - L.direction.z;
 
-				point RdotV;
-				RdotV.x = R.direction.x * -pIntersect.x;
-				RdotV.y = R.direction.y * -pIntersect.y;
-				RdotV.z = R.direction.z * -pIntersect.z;
-				//std::cout << "  x == " << shadowRay.direction.x + shadowRay.direction.y + shadowRay.direction.z;
+				double RdotV = (R.direction.x * (-pIntersect.x))
+					+ (R.direction.y * (-pIntersect.y))
+					+ (R.direction.z * (-pIntersect.z));
 
-				double colorX = l.color[0] * ((s.color_diffuse[0] * LdotN.x) + (s.color_specular[0] * RdotV.x));
-				double colorY = l.color[1] * ((s.color_diffuse[1] * LdotN.y) + (s.color_specular[1] * RdotV.y));
-				double colorZ = l.color[2] * ((s.color_diffuse[2] * LdotN.z) + (s.color_specular[2] * RdotV.z));
+				double colorX = l.color[0] * ((s.color_diffuse[0] * LdotN) + (s.color_specular[0] * RdotV));
+				double colorY = l.color[1] * ((s.color_diffuse[1] * LdotN) + (s.color_specular[1] * RdotV));
+				double colorZ = l.color[2] * ((s.color_diffuse[2] * LdotN) + (s.color_specular[2] * RdotV));
 
-				pixel.x += colorX;
-				pixel.y += colorY;
-				pixel.z += colorZ;
+				pixel.x = s.color_diffuse[0] * colorX;
+				pixel.y = s.color_diffuse[1] * colorY;
+				pixel.z = s.color_diffuse[2] * colorZ;
 			}
+			// if object is in a shadow
 			else {
-				pixel.x = s.color_diffuse[0];
-				pixel.y = s.color_diffuse[1];
-				pixel.z = s.color_diffuse[2];
+				pixel.x = s.color_diffuse[0] / 2;
+				pixel.y = s.color_diffuse[1] / 2;
+				pixel.z = s.color_diffuse[2] / 2;
 			}
 		}
 	}
