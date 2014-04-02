@@ -64,11 +64,6 @@ struct Pixel
 	double x, y, z;
 };
 
-typedef struct _Triangle
-{
-	struct Vertex v[3];
-} Triangle;
-
 typedef struct _Light
 {
 	double position[3];
@@ -109,9 +104,19 @@ public:
 		double t1 = (-b + sqrt(g)) / 2;	// point along ray which exits/enters the sphere
 
 		// determine which point is closer
+		// TODO min **positive** t
 		minT = min(t0, t1);
 
 		return true;
+	}
+};
+
+class Triangle {
+public:
+	struct Vertex v[3];
+
+	bool rayIntersect(Ray ray) {
+		return false;
 	}
 };
 
@@ -184,9 +189,9 @@ void calculateCorners() {
 Pixel rayTrace(Ray ray) {
 
 	Pixel pixel;
-	pixel.x = 0.3;
-	pixel.y = 0.3;
-	pixel.z = 0.3;
+	pixel.x = 0.4;
+	pixel.y = 0.4;
+	pixel.z = 0.4;
 
 	point pIntersect;
 	normal nIntersect;
@@ -285,6 +290,10 @@ Pixel rayTrace(Ray ray) {
 					double RdotV = (R.direction.x * (-pIntersect.x))
 						+ (R.direction.y * (-pIntersect.y))
 						+ (R.direction.z * (-pIntersect.z));
+					
+					if (s.shininess < 1) {
+						s.shininess = 1;
+					}
 
 					/* calculate light intensity */
 					double colorX = l.color[0] * ((s.color_diffuse[0] * LdotN) + pow((s.color_specular[0] * RdotV), s.shininess));
@@ -300,8 +309,6 @@ Pixel rayTrace(Ray ray) {
 					pixel.x += colorX;
 					pixel.y += colorY;
 					pixel.z += colorZ;
-
-					//std::cout << "  p: " << R.direction.z;
 				}
 				/* if the point is in a shadow */
 				else {
@@ -312,9 +319,13 @@ Pixel rayTrace(Ray ray) {
 			}
 		}
 	}
-	// if the ray does not intersect a sphere
+
+	/* if the ray does not intersect an object */
+	/* determine if background is in a shadow */
 	else {
-		/* calculate shadow on background */
+		pixel.x = 0.1;
+		pixel.y = 0.1;
+		pixel.z = 0.1;
 	}
 	
 	return pixel;
