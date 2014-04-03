@@ -24,6 +24,3 @@ col: 1 1 1
 light
 pos: 0 0 0
 col: 1 1 1
-light
-pos: -1 0 -1
-col: 1 1 1

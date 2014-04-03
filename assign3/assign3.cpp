@@ -72,8 +72,8 @@ typedef struct _Light
 
 typedef struct _Ray
 {
-	point origin;
-	point direction;
+	double origin[3];
+	double direction[3];
 } Ray;
 
 class Sphere {
@@ -84,14 +84,14 @@ public:
 	double shininess;
 	double radius;
 
-	bool rayIntersect(Ray ray, double &minT) {
+	bool rayIntersect(Ray ray, double &minT, bool &inside) {
 
-		double x = ray.origin.x - position[0];
-		double y = ray.origin.y - position[1];
-		double z = ray.origin.z - position[2];
+		double x = ray.origin[0] - position[0];
+		double y = ray.origin[1] - position[1];
+		double z = ray.origin[2] - position[2];
 
 		// a = 1 = x_direction^2 + y_direction^2 + z_direction^2
-		double b = 2 * ((ray.direction.x * x) + (ray.direction.y * y) + (ray.direction.z * z));
+		double b = 2 * ((ray.direction[0] * x) + (ray.direction[1] * y) + (ray.direction[2] * z));
 		double c = (x * x) + (y * y) + (z * z) - (radius * radius);
 
 		double g = (b * b) - (4 * c);
@@ -104,8 +104,17 @@ public:
 		double t1 = (-b + sqrt(g)) / 2;	// point along ray which exits/enters the sphere
 
 		// determine which point is closer
-		// TODO min **positive** t
-		minT = min(t0, t1);
+		if (t0 < 0) {
+			minT = t1;
+			inside = true;
+		}
+		else if (t1 < 0) {
+			minT = t0;
+			inside = true;
+		}
+		else {
+			minT = min(t0, t1);
+		}
 
 		return true;
 	}
@@ -113,10 +122,63 @@ public:
 
 class Triangle {
 public:
-	struct Vertex v[3];
+	struct Vertex vertex[3];
 
-	bool rayIntersect(Ray ray) {
-		return false;
+	bool rayIntersect(Ray ray, double &t, double &u, double &v) {
+
+		/*
+		ray equation			point on a triangle
+		R(t) = O + tD		T(u,v) = (1 - u - v)V0 + uV1 + uV2
+		for an intersection, point on ray = point on triangle
+		O + tD = (1 - u - v)V0 + uV1 + uV2
+		[-D, V1 - V0, V2 - V0] [t u v]^Tr = O - V0
+		E1 = V1 - V0, E2 = V2 - V0, T = O - V0
+		*/
+
+		double e1[3], e2[3], tVec[3], pVec[3], qVec[3];
+		double det;
+
+		/* calculate edges */
+		for (int i = 0; i < 3; i++) {
+			e1[i] = vertex[1].position[i] - vertex[0].position[i];
+			e2[i] = vertex[2].position[i] - vertex[0].position[i];
+		}
+
+		/* pVec = cross_product(ray, e2) */
+		pVec[0] = (ray.direction[1] * e2[2]) - (ray.direction[2] * e2[1]);
+		pVec[1] = (ray.direction[2] * e2[0]) - (ray.direction[0] * e2[2]);
+		pVec[2] = (ray.direction[0] * e2[1]) - (ray.direction[1] * e2[0]);
+
+		/* if determinent is 0, ray is in triangle plane */
+		det = (e1[0] * pVec[0]) + (e1[1] * pVec[1]) + (e1[2] * pVec[2]);
+		if (det == 0) return false;
+
+		/* calculate distance from V0 to ray origin */
+		for (int i = 0; i < 3; i++) {
+			tVec[i] = ray.origin[i] - vertex[0].position[i];
+		}
+
+		/* calculate u = dot_product(tVec, pVec) / det */
+		u = (tVec[0] * pVec[0]) + (tVec[1] * pVec[1]) + (tVec[2] * pVec[2]) / det;
+		/* test bounds */
+		if (u < 0 || u > 1) return false;
+
+		/* qVec = cross_product(tVec, e1) */
+		qVec[0] = (tVec[1] * e1[2]) - (tVec[2] * e1[1]);
+		qVec[1] = (tVec[2] * e1[0]) - (tVec[0] * e1[2]);
+		qVec[2] = (tVec[0] * e1[1]) - (tVec[1] * e1[0]);
+
+		/* calculate v = dot_product(ray_direction, qVec) / det */
+		v = (ray.direction[0] * qVec[0]) + (ray.direction[1] * qVec[1]) + (ray.direction[2] * qVec[2]) / det;
+		/* test bounds */
+		if (v < 0 || u + v > 1) return false;
+
+
+		/* otherwise, intersection exists */
+		/* calculate t = dot_product(e2, qVec) / det */
+		t = (e2[0] * qVec[0]) + (e2[1] * qVec[1]) + (e2[2] * qVec[2]) / det;
+
+		return true;
 	}
 };
 
@@ -132,58 +194,31 @@ int num_lights = 0;
 void plot_pixel_display(int x, int y, unsigned char r, unsigned char g, unsigned char b);
 void plot_pixel_jpeg(int x, int y, unsigned char r, unsigned char g, unsigned char b);
 void plot_pixel(int x, int y, unsigned char r, unsigned char g, unsigned char b);
+void save_jpg();
 
 double aspectRatio;
 // image corner coordinates
 // x
-double x00;	// bottom left
-double x10;	// bottom right
-double x01;	// top left
-double x11;	// top right
+double xLeft;	// left
+double xRight;	// right
 // y
-double y00;	// bottom left
-double y10;	// bottom right
-double y01;	// top left
-double y11;	// top right
+double yBottom;	// bottom
+double yTop;	// top
 // z
-double z00;	// bottom left
-double z10;	// bottom right
-double z01;	// top left
-double z11;	// top right
+double z;
 
 Pixel pixels[WIDTH][HEIGHT];
 
 void calculateCorners() {
 	aspectRatio = (double)WIDTH / (double)HEIGHT;
 
-	x00 = -aspectRatio * tan(fov * PI / 360); //	fov/2 * PI/180
-	x10 = -x00;
-	x01 = x00;
-	x11 = x10;
+	xLeft = -aspectRatio * tan(fov * PI / 360); //	fov/2 * PI/180
+	xRight = -xLeft;
 
-	y00 = -tan(fov * PI / 360);
-	y10 = y00;
-	y01 = -y00;
-	y11 = y01;
+	yBottom = -tan(fov * PI / 360);
+	yTop = -yBottom;
 
-	z00 = -1;
-	z10 = -1;
-	z01 = -1;
-	z11 = -1;
-
-	std::cout << std::endl << std::endl;
-	std::cout << "x00 : " << x00 << std::endl;
-	std::cout << "x10 : " << x10 << std::endl;
-	std::cout << "x01 : " << x01 << std::endl;
-	std::cout << "x11 : " << x11 << std::endl;
-	std::cout << "y00 : " << y00 << std::endl;
-	std::cout << "y10 : " << y10 << std::endl;
-	std::cout << "y01 : " << y01 << std::endl;
-	std::cout << "y11 : " << y11 << std::endl;
-	std::cout << "z00 : " << z00 << std::endl;
-	std::cout << "z10 : " << z10 << std::endl;
-	std::cout << "z01 : " << z01 << std::endl;
-	std::cout << "z11 : " << z11 << std::endl;
+	z = -1;
 }
 
 Pixel rayTrace(Ray ray) {
@@ -197,16 +232,13 @@ Pixel rayTrace(Ray ray) {
 	normal nIntersect;
 	Sphere s;
 	double minDistance = -1;
+	bool inside = false;
 
 	for (int i = 0; i < num_spheres; i++) {
 		Sphere sphere = spheres[i];
 		double minT;
-		if (sphere.rayIntersect(ray, minT)) {
-			if (minDistance == -1) {
-				minDistance = minT;
-				s = sphere;
-			}
-			else if (minT < minDistance) {
+		if (sphere.rayIntersect(ray, minT, inside)) {
+			if (minDistance == -1 || minT < minDistance) {
 				minDistance = minT;
 				s = sphere;
 			}
@@ -221,9 +253,9 @@ Pixel rayTrace(Ray ray) {
 		pixel.z = s.color_diffuse[2];
 
 		/* calculate intersection point on sphere */
-		pIntersect.x = ray.origin.x + ray.direction.x*minDistance;
-		pIntersect.y = ray.origin.y + ray.direction.y*minDistance;
-		pIntersect.z = ray.origin.z + ray.direction.z*minDistance;
+		pIntersect.x = ray.origin[0] + ray.direction[0] * minDistance;
+		pIntersect.y = ray.origin[1] + ray.direction[1] * minDistance;
+		pIntersect.z = ray.origin[2] + ray.direction[2] * minDistance;
 
 		/* calculate normal of intersection point on sphere */
 		nIntersect.x = (pIntersect.x - s.position[0]) / s.radius;
@@ -231,11 +263,11 @@ Pixel rayTrace(Ray ray) {
 		nIntersect.z = (pIntersect.z - s.position[2]) / s.radius;
 
 		/* negate normal if ray starts inside of sphere */
-		//if () {
-		//	nIntersect.x *= -1;
-		//	nIntersect.y *= -1;
-		//	nIntersect.z *= -1;
-		//}
+		if (inside) {
+			nIntersect.x *= -1;
+			nIntersect.y *= -1;
+			nIntersect.z *= -1;
+		}
 
 		/* for each light source, fire shadow ray */
 		for (int i = 0; i < num_lights; i++) {
@@ -244,52 +276,53 @@ Pixel rayTrace(Ray ray) {
 			/* unit vector to the light */
 			Ray shadowRay;
 			// origin
-			shadowRay.origin.x = pIntersect.x;
-			shadowRay.origin.y = pIntersect.y;
-			shadowRay.origin.z = pIntersect.z;
+			shadowRay.origin[0] = pIntersect.x;
+			shadowRay.origin[1] = pIntersect.y;
+			shadowRay.origin[2] = pIntersect.z;
 			// direction
-			shadowRay.direction.x = l.position[0] - pIntersect.x;
-			shadowRay.direction.y = l.position[1] - pIntersect.y;
-			shadowRay.direction.z = l.position[2] - pIntersect.z;
+			shadowRay.direction[0] = l.position[0] - pIntersect.x;
+			shadowRay.direction[1] = l.position[1] - pIntersect.y;
+			shadowRay.direction[2] = l.position[2] - pIntersect.z;
 			// magnitude
-			double xShadowMag = shadowRay.direction.x - shadowRay.origin.x;
-			double yShadowMag = shadowRay.direction.y - shadowRay.origin.y;
-			double zShadowMag = shadowRay.direction.z - shadowRay.origin.z;
+			double xShadowMag = shadowRay.direction[0] - shadowRay.origin[0];
+			double yShadowMag = shadowRay.direction[1] - shadowRay.origin[1];
+			double zShadowMag = shadowRay.direction[2] - shadowRay.origin[2];
 			double mag = sqrt((xShadowMag * xShadowMag) + (yShadowMag * yShadowMag) + (zShadowMag * zShadowMag));
 			// normalize
-			shadowRay.direction.x /= mag;
-			shadowRay.direction.y /= mag;
-			shadowRay.direction.z /= mag;
+			shadowRay.direction[0] /= mag;
+			shadowRay.direction[1] /= mag;
+			shadowRay.direction[2] /= mag;
 
 			/* for each unblocked shadow ray, evaluate local phong model for */
 			/* that light, and add result to pixel color */
 			for (int j = 0; j < num_spheres; j++) {
 				Sphere sphere = spheres[j];
 				/* determine if shadow ray is blocked by any objects */
-				double dummy;
-				if (!(sphere.rayIntersect(shadowRay, dummy))) {
+				double dummy1;
+				bool dummy2;
+				if (!(sphere.rayIntersect(shadowRay, dummy1, dummy2))) {
 
 					Ray L = shadowRay;
-					double LdotN = (L.direction.x * nIntersect.x)
-						+ (L.direction.y * nIntersect.y)
-						+ (L.direction.z * nIntersect.z);
+					double LdotN = (L.direction[0] * nIntersect.x)
+						+ (L.direction[1] * nIntersect.y)
+						+ (L.direction[2] * nIntersect.z);
 
 					Ray R = L;
-					R.direction.x = 2 * LdotN * nIntersect.x - L.direction.x;
-					R.direction.y = 2 * LdotN * nIntersect.y - L.direction.y;
-					R.direction.z = 2 * LdotN * nIntersect.z - L.direction.z;
+					R.direction[0] = 2 * LdotN * nIntersect.x - L.direction[0];
+					R.direction[1] = 2 * LdotN * nIntersect.y - L.direction[1];
+					R.direction[2] = 2 * LdotN * nIntersect.z - L.direction[2];
 					// normalize
-					double xRMag = R.direction.x - R.origin.x;
-					double yRMag = R.direction.y - R.origin.y;
-					double zRMag = R.direction.z - R.origin.z;
+					double xRMag = R.direction[0] - R.origin[0];
+					double yRMag = R.direction[1] - R.origin[1];
+					double zRMag = R.direction[2] - R.origin[2];
 					double Rmag = sqrt((xRMag * xRMag) + (yRMag * yRMag) + (zRMag * zRMag));
-					R.direction.x /= Rmag;
-					R.direction.y /= Rmag;
-					R.direction.z /= Rmag;
+					R.direction[0] /= Rmag;
+					R.direction[1] /= Rmag;
+					R.direction[2] /= Rmag;
 
-					double RdotV = (R.direction.x * (-pIntersect.x))
-						+ (R.direction.y * (-pIntersect.y))
-						+ (R.direction.z * (-pIntersect.z));
+					double RdotV = (R.direction[0] * (-pIntersect.x))
+						+ (R.direction[1] * (-pIntersect.y))
+						+ (R.direction[2] * (-pIntersect.z));
 					
 					if (s.shininess < 1) {
 						s.shininess = 1;
@@ -337,14 +370,14 @@ void castRays() {
 
 	// ray origin = camera origin = 0,0,0
 	Ray ray;
-	ray.origin.x = 0;
-	ray.origin.y = 0;
-	ray.origin.z = 0;
+	ray.origin[0] = 0;
+	ray.origin[1] = 0;
+	ray.origin[2] = 0;
 
 	
 	// calculate image width, height and pixel separation
-	double imageWidth = x10 - x00;	// right - left
-	double imageHeight = y01 - y00;	// top - bottom
+	double imageWidth = xRight - xLeft;	// right - left
+	double imageHeight = yTop - yBottom;	// top - bottom
 	double stepWidth = imageWidth / WIDTH;
 	double stepHeight = imageHeight / HEIGHT;
 
@@ -353,16 +386,16 @@ void castRays() {
 
 	// j = top; while j > bottom; decrement j
 	int m = 0, n = 0;
-	for (double j = y01 - stepHeight / 2; j > y00 + stepHeight; j -= stepHeight, n++) {
+	for (double j = yTop - stepHeight / 2; j > yBottom + stepHeight; j -= stepHeight, n++) {
 		// i = left; while i < right; increment i
 		m = 0;
-		for (double i = x00 + stepWidth / 2; i < x10 - stepWidth; i += stepWidth, m++) {
+		for (double i = xLeft + stepWidth / 2; i < xRight - stepWidth; i += stepWidth, m++) {
 
 			double magnitude = sqrt(i*i + j*j + 1); // z = -1, so z*z = 1
 
-			ray.direction.x = i / magnitude;
-			ray.direction.y = j / magnitude;
-			ray.direction.z = -1 / magnitude;
+			ray.direction[0] = i / magnitude;
+			ray.direction[1] = j / magnitude;
+			ray.direction[2] = -1 / magnitude;
 
 			// trace the ray and assign color
 			pixels[m][n] = rayTrace(ray);
@@ -371,7 +404,6 @@ void castRays() {
 	
 }
 
-//MODIFY THIS FUNCTION
 void draw_scene()
 {
 	calculateCorners();
@@ -392,6 +424,7 @@ void draw_scene()
 		glEnd();
 		glFlush();
 	}
+
 	printf("Done!\n"); fflush(stdout);
 }
 
@@ -499,11 +532,11 @@ int loadScene(char *argv)
 
 			for (j = 0; j < 3; j++)
 			{
-				parse_doubles(file, "pos:", t.v[j].position);
-				parse_doubles(file, "nor:", t.v[j].normal);
-				parse_doubles(file, "dif:", t.v[j].color_diffuse);
-				parse_doubles(file, "spe:", t.v[j].color_specular);
-				parse_shi(file, &t.v[j].shininess);
+				parse_doubles(file, "pos:", t.vertex[j].position);
+				parse_doubles(file, "nor:", t.vertex[j].normal);
+				parse_doubles(file, "dif:", t.vertex[j].color_diffuse);
+				parse_doubles(file, "spe:", t.vertex[j].color_specular);
+				parse_shi(file, &t.vertex[j].shininess);
 			}
 
 			if (num_triangles == MAX_TRIANGLES)
