@@ -149,7 +149,7 @@ public:
 		}
 
 		/* calculate u = dot_product(tVec, pVec) / det */
-		u = (tVec[0] * pVec[0]) + (tVec[1] * pVec[1]) + (tVec[2] * pVec[2]) / det;
+		u = ((tVec[0] * pVec[0]) + (tVec[1] * pVec[1]) + (tVec[2] * pVec[2])) / det;
 		/* test bounds */
 		if (u < 0 || u > 1) return false;
 
@@ -159,14 +159,16 @@ public:
 		qVec[2] = (tVec[0] * e1[1]) - (tVec[1] * e1[0]);
 
 		/* calculate v = dot_product(ray_direction, qVec) / det */
-		v = (ray.direction[0] * qVec[0]) + (ray.direction[1] * qVec[1]) + (ray.direction[2] * qVec[2]) / det;
+		v = ((ray.direction[0] * qVec[0]) + (ray.direction[1] * qVec[1]) + (ray.direction[2] * qVec[2])) / det;
 		/* test bounds */
 		if (v < 0 || u + v > 1) return false;
 
 
 		/* otherwise, intersection exists */
 		/* calculate t = dot_product(e2, qVec) / det */
-		t = (e2[0] * qVec[0]) + (e2[1] * qVec[1]) + (e2[2] * qVec[2]) / det;
+		t = ((e2[0] * qVec[0]) + (e2[1] * qVec[1]) + (e2[2] * qVec[2])) / det;
+
+		//std::cout << "  t: " << t;
 
 		return true;
 	}
@@ -233,9 +235,9 @@ double area(double v1[3], double v2[3], double v3[3]) {
 Pixel rayTrace(Ray ray) {
 
 	Pixel pixel;
-	pixel.x = 0.4;
-	pixel.y = 0.4;
-	pixel.z = 0.4;
+	pixel.x = ambient_light[0];
+	pixel.y = ambient_light[1];
+	pixel.z = ambient_light[2];
 
 	double pIntersect[3];
 	double nIntersect[3];
@@ -401,26 +403,74 @@ Pixel rayTrace(Ray ray) {
 
 		/* calculate barycentric coordinates of triangle */
 		double triArea = area(t.vertex[0].position, t.vertex[1].position, t.vertex[2].position);
+
 		double alpha = area(pIntersect, t.vertex[1].position, t.vertex[2].position) / triArea;
 		double beta = area(t.vertex[0].position, pIntersect, t.vertex[2].position) / triArea;
 		double gamma = area(t.vertex[0].position, t.vertex[1].position, pIntersect) / triArea;
 
-		/* calculate normal of intersection point on triangle */
-		double e1[3], e2[3];
-		// calculate edges
+		/* calculate interpolated normal of intersection point on triangle */
+		double nMag = sqrt(
+			pow((alpha * t.vertex[0].normal[0])
+			+ (beta * t.vertex[1].normal[0])
+			+ (gamma * t.vertex[2].normal[0]), 2)
+			+
+			pow((alpha * t.vertex[0].normal[1])
+			+ (beta * t.vertex[1].normal[1])
+			+ (gamma * t.vertex[2].normal[1]), 2)
+			+
+			pow((alpha * t.vertex[0].normal[2])
+			+ (beta * t.vertex[1].normal[2])
+			+ (gamma * t.vertex[2].normal[2]), 2)
+			);
+		double normal[3];
 		for (int i = 0; i < 3; i++) {
-			e1[i] = t.vertex[1].position[i] - t.vertex[0].position[i];
-			e2[i] = t.vertex[2].position[i] - t.vertex[0].position[i];
+			normal[i] = ((alpha * t.vertex[0].normal[i])
+				+ (beta * t.vertex[1].normal[i])
+				+ (gamma * t.vertex[2].normal[i])) / nMag;
 		}
-		// normal = cross_product(e1, e2);
-		nIntersect[0] = (e1[1] * e2[2]) - (e1[2] * e2[1]);
-		nIntersect[1] = (e1[2] * e2[0]) - (e1[0] * e2[2]);
-		nIntersect[2] = (e1[0] * e2[1]) - (e1[1] * e2[0]);
-		// normalize
-		double nMag = sqrt((nIntersect[0] * nIntersect[0]) + (nIntersect[1] * nIntersect[1]) + (nIntersect[2] * nIntersect[2]));
-		nIntersect[0] /= nMag;
-		nIntersect[1] /= nMag;
-		nIntersect[2] /= nMag;
+
+		/* calculate interpolated diffuse color */
+		double dMag = sqrt(
+			pow((alpha * t.vertex[0].color_diffuse[0])
+			+ (beta * t.vertex[1].color_diffuse[0])
+			+ (gamma * t.vertex[2].color_diffuse[0]), 2)
+			+
+			pow((alpha * t.vertex[0].color_diffuse[1])
+			+ (beta * t.vertex[1].color_diffuse[1])
+			+ (gamma * t.vertex[2].color_diffuse[1]), 2)
+			+
+			pow((alpha * t.vertex[0].color_diffuse[2])
+			+ (beta * t.vertex[1].color_diffuse[2])
+			+ (gamma * t.vertex[2].color_diffuse[2]), 2)
+			);
+		double diffuse_color[3];
+		for (int i = 0; i < 3; i++) {
+			diffuse_color[i] = ((alpha * t.vertex[0].color_diffuse[i])
+				+ (beta * t.vertex[1].color_diffuse[i])
+				+ (gamma * t.vertex[2].color_diffuse[i])) / dMag;
+		}
+		//std::cout << "  color: " << diffuse_color[2];
+
+		/* calculate interpolated specular color */
+		double sMag = sqrt(
+			pow((alpha * t.vertex[0].color_specular[0])
+			+ (beta * t.vertex[1].color_specular[0])
+			+ (gamma * t.vertex[2].color_specular[0]), 2)
+			+
+			pow((alpha * t.vertex[0].color_specular[1])
+			+ (beta * t.vertex[1].color_specular[1])
+			+ (gamma * t.vertex[2].color_specular[1]), 2)
+			+
+			pow((alpha * t.vertex[0].color_specular[2])
+			+ (beta * t.vertex[1].color_specular[2])
+			+ (gamma * t.vertex[2].color_specular[2]), 2)
+			);
+		double specular_color[3];
+		for (int i = 0; i < 3; i++) {
+			specular_color[i] = ((alpha * t.vertex[0].color_specular[i])
+				+ (beta * t.vertex[1].color_specular[i])
+				+ (gamma * t.vertex[2].color_specular[i])) / sMag;
+		}
 
 		/* for each light source, fire shadow ray */
 		for (int i = 0; i < num_lights; i++) {
@@ -454,15 +504,15 @@ Pixel rayTrace(Ray ray) {
 				double dummy3, dummy4, dummy5;
 				if (!(triangle.rayIntersect(shadowRay, dummy3, dummy4, dummy5))) {
 					Ray L = shadowRay;
-					double LdotN = (L.direction[0] * nIntersect[0])
-						+ (L.direction[1] * nIntersect[1])
-						+ (L.direction[2] * nIntersect[2]);
+					double LdotN = (L.direction[0] * normal[0])
+						+ (L.direction[1] * normal[1])
+						+ (L.direction[2] * normal[2]);
 					if (LdotN < 0) LdotN = 0;
 
 					Ray R = L;
-					R.direction[0] = 2 * LdotN * nIntersect[0] - L.direction[0];
-					R.direction[1] = 2 * LdotN * nIntersect[1] - L.direction[1];
-					R.direction[2] = 2 * LdotN * nIntersect[2] - L.direction[2];
+					R.direction[0] = 2 * LdotN * normal[0] - L.direction[0];
+					R.direction[1] = 2 * LdotN * normal[1] - L.direction[1];
+					R.direction[2] = 2 * LdotN * normal[2] - L.direction[2];
 					// normalize
 					double xRMag = R.direction[0] - R.origin[0];
 					double yRMag = R.direction[1] - R.origin[1];
@@ -482,9 +532,9 @@ Pixel rayTrace(Ray ray) {
 					}
 
 					/* calculate light intensity */
-					double colorX = l.color[0] * ((s.color_diffuse[0] * LdotN) + pow((s.color_specular[0] * RdotV), s.shininess));
-					double colorY = l.color[1] * ((s.color_diffuse[1] * LdotN) + pow((s.color_specular[1] * RdotV), s.shininess));
-					double colorZ = l.color[2] * ((s.color_diffuse[2] * LdotN) + pow((s.color_specular[2] * RdotV), s.shininess));
+					double colorX = l.color[0] * ((diffuse_color[0] * LdotN) + pow((specular_color[0] * RdotV), s.shininess));
+					double colorY = l.color[1] * ((diffuse_color[1] * LdotN) + pow((specular_color[1] * RdotV), s.shininess));
+					double colorZ = l.color[2] * ((diffuse_color[2] * LdotN) + pow((specular_color[2] * RdotV), s.shininess));
 
 					/* clamp to 0,1 */
 					/* if color < 0, color = 0, else if color > 1, color = 1, else no change*/
@@ -495,12 +545,15 @@ Pixel rayTrace(Ray ray) {
 					pixel.x += colorX;
 					pixel.y += colorY;
 					pixel.z += colorZ;
+
+					//std::cout << "  x: " << colorX;
 				}
 				/* if the point is in a shadow */
 				else {
 					pixel.x /= 2;
 					pixel.y /= 2;
 					pixel.z /= 2;
+					//std::cout << "  xx: " << pixel.x;
 				}
 			}
 		}
@@ -508,9 +561,9 @@ Pixel rayTrace(Ray ray) {
 	/* if the ray does not intersect an object */
 	/* determine if background is in a shadow */
 	else {
-		pixel.x = 0.1;
-		pixel.y = 0.1;
-		pixel.z = 0.1;
+		//pixel.x = 0.1;
+		//pixel.y = 0.1;
+		//pixel.z = 0.1;
 	}
 
 	return pixel;
