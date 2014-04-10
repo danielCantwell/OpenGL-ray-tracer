@@ -40,6 +40,14 @@ int mode = MODE_DISPLAY;
 
 unsigned char buffer[HEIGHT][WIDTH][3];
 
+double dot(double v1[3], double v2[3]);
+double area(double v1[2], double v2[2], double v3[2]);
+
+#define cross(result, v1, v2) \
+	result[0] = (v1[1] * v2[2]) - (v1[2] * v2[1]); \
+	result[1] = (v1[2] * v2[0]) - (v1[0] * v2[2]); \
+	result[2] = (v1[0] * v2[1]) - (v1[1] * v2[0]);
+
 struct Vertex
 {
 	double position[3];
@@ -114,63 +122,73 @@ class Triangle {
 public:
 	struct Vertex vertex[3];
 
-	bool rayIntersect(Ray ray, double &t, double &u, double &v) {
+	bool rayIntersect(Ray ray, double &t, double &alpha, double &beta, double &gamma) {
 
-		/*
-		ray equation			point on a triangle
-		R(t) = O + tD		T(u,v) = (1 - u - v)V0 + uV1 + uV2
-		for an intersection, point on ray = point on triangle
-		O + tD = (1 - u - v)V0 + uV1 + uV2
-		[-D, V1 - V0, V2 - V0] [t u v]^Tr = O - V0
-		E1 = V1 - V0, E2 = V2 - V0, T = O - V0
-		*/
-
-		double e1[3], e2[3], tVec[3], pVec[3], qVec[3];
-		double det;
-
+		double edge1[3], edge2[3];
 		/* calculate edges */
 		for (int i = 0; i < 3; i++) {
-			e1[i] = vertex[1].position[i] - vertex[0].position[i];
-			e2[i] = vertex[2].position[i] - vertex[0].position[i];
+			edge1[i] = vertex[1].position[i] - vertex[0].position[i];
+			edge2[i] = vertex[2].position[i] - vertex[0].position[i];
 		}
 
-		/* pVec = cross_product(ray, e2) */
-		pVec[0] = (ray.direction[1] * e2[2]) - (ray.direction[2] * e2[1]);
-		pVec[1] = (ray.direction[2] * e2[0]) - (ray.direction[0] * e2[2]);
-		pVec[2] = (ray.direction[0] * e2[1]) - (ray.direction[1] * e2[0]);
+		/* calculate normal of plane containing triangle */
+		double planeNormal[3];
+		cross(planeNormal, edge1, edge2);
+		/* normalize normal */
+		double mag = sqrt((planeNormal[0] * planeNormal[0])
+			+ (planeNormal[1] * planeNormal[1])
+			+ (planeNormal[2] * planeNormal[2]));
+		planeNormal[0] /= mag;
+		planeNormal[1] /= mag;
+		planeNormal[2] /= mag;
 
-		/* if determinent is 0, ray is in triangle plane */
-		det = (e1[0] * pVec[0]) + (e1[1] * pVec[1]) + (e1[2] * pVec[2]);
-		if (det == 0) return false;
+		/* calculate intersection of ray with plane */
+		/* t = - (origin - vertex) .dot. normal / direction .dot. normal */
+		double ov[3];	// origin - vertex
+		ov[0] = ray.origin[0] - vertex[0].position[0];
+		ov[1] = ray.origin[1] - vertex[0].position[1];
+		ov[2] = ray.origin[2] - vertex[0].position[2];
 
-		/* calculate distance from V0 to ray origin */
-		for (int i = 0; i < 3; i++) {
-			tVec[i] = ray.origin[i] - vertex[0].position[i];
+		// ray = O + tD
+		double DdotN = dot(ray.direction, planeNormal);
+		if (DdotN == 0) return false;	// ray parallel to plane
+
+		t = - dot(ov, planeNormal) / DdotN;
+		if (t < 0) return false;	// intersection is behind origin
+
+		/* calculate intersection point */
+		double point[3];
+		point[0] = ray.origin[0] + (t * ray.direction[0]);
+		point[1] = ray.origin[1] + (t * ray.direction[1]);
+		point[2] = ray.origin[2] + (t * ray.direction[2]);
+
+		/* test is point is inside triangle using barycentric coordinates */
+		double pointProjected[2], v0Projected[2], v1Projected[2], v2Projected[2];
+
+		for (int i = 0; i < 2; i++) {
+			pointProjected[i] = point[i];
+			v0Projected[i] = vertex[0].position[i];
+			v1Projected[i] = vertex[1].position[i];
+			v2Projected[i] = vertex[2].position[i];
 		}
 
-		/* calculate u = dot_product(tVec, pVec) / det */
-		u = ((tVec[0] * pVec[0]) + (tVec[1] * pVec[1]) + (tVec[2] * pVec[2])) / det;
-		/* test bounds */
-		if (u < 0 || u > 1) return false;
+		double triArea = area(v0Projected, v1Projected, v2Projected);
 
-		/* qVec = cross_product(tVec, e1) */
-		qVec[0] = (tVec[1] * e1[2]) - (tVec[2] * e1[1]);
-		qVec[1] = (tVec[2] * e1[0]) - (tVec[0] * e1[2]);
-		qVec[2] = (tVec[0] * e1[1]) - (tVec[1] * e1[0]);
-
-		/* calculate v = dot_product(ray_direction, qVec) / det */
-		v = ((ray.direction[0] * qVec[0]) + (ray.direction[1] * qVec[1]) + (ray.direction[2] * qVec[2])) / det;
-		/* test bounds */
-		if (v < 0 || u + v > 1) return false;
+		alpha = area(pointProjected, v1Projected, v2Projected) / triArea;
+		beta = area(v0Projected, pointProjected, v2Projected) / triArea;
+		gamma = area(v0Projected, v1Projected, pointProjected) / triArea;
 
 
-		/* otherwise, intersection exists */
-		/* calculate t = dot_product(e2, qVec) / det */
-		t = ((e2[0] * qVec[0]) + (e2[1] * qVec[1]) + (e2[2] * qVec[2])) / det;
-
-		//std::cout << "  t: " << t;
-
-		return true;
+		/* point is inside triangle iff  (alpha + beta + gamma) = 1  */
+		if (alpha >= 0 && alpha <= 1
+			&& beta >= 0 && beta <= 1
+			&& gamma >= 0 && gamma <= 1
+			&& (alpha + beta + gamma) == 1) {
+			return true;
+		}
+		else {
+			return false;
+		}
 	}
 };
 
@@ -190,13 +208,10 @@ void save_jpg();
 
 double aspectRatio;
 // image corner coordinates
-// x
 double xLeft;	// left
 double xRight;	// right
-// y
 double yBottom;	// bottom
 double yTop;	// top
-// z
 double z;
 
 Pixel pixels[WIDTH][HEIGHT];
@@ -213,23 +228,23 @@ void calculateCorners() {
 	z = -1;
 }
 
-double area(double v1[3], double v2[3], double v3[3]) {
-	double AB[3];
-	double AC[3];
+double area(double v1[2], double v2[2], double v3[2]) {
 
+	double abx = v2[0] - v1[0];
+	double aby = v2[1] - v1[1];
+
+	double acx = v3[0] - v1[0];
+	double acy = v3[1] - v1[1];
+
+	return ((abx * acy) - (acx * aby)) / 2;
+}
+
+double dot(double v1[3], double v2[3]) {
+	double result = 0;
 	for (int i = 0; i < 3; i++) {
-		AB[i] = v2[i] - v1[i];
-		AC[i] = v3[i] - v1[i];
+		result += v1[i] * v2[i];
 	}
-
-	double ABxAC[3];
-	ABxAC[0] = (AB[1] * AC[2]) - (AB[2] * AC[1]);
-	ABxAC[1] = (AB[2] * AC[0]) - (AB[0] * AC[2]);
-	ABxAC[2] = (AB[0] * AC[1]) - (AB[1] * AC[0]);
-
-	double length = sqrt((ABxAC[0] * ABxAC[0]) + (ABxAC[1] * ABxAC[1]) + (ABxAC[2] * ABxAC[2]));
-
-	return length / 2;
+	return result;
 }
 
 Pixel rayTrace(Ray ray) {
@@ -257,13 +272,13 @@ Pixel rayTrace(Ray ray) {
 	}
 
 	Triangle t;
-	double u, v;
+	double alpha, beta, gamma;
 	double minTriangleDistance = -1;
 
 	for (int i = 0; i < num_triangles; i++) {
 		Triangle triangle = triangles[i];
 		double minT;
-		if (triangle.rayIntersect(ray, minT, u, v)) {
+		if (triangle.rayIntersect(ray, minT, alpha, beta, gamma)) {
 			if (minTriangleDistance == -1 || minT < minTriangleDistance) {
 				minTriangleDistance = minT;
 				t = triangle;
@@ -280,8 +295,10 @@ Pixel rayTrace(Ray ray) {
 			minSphereDistance = -1;
 		}
 	}
-
-	/* if the ray intersects a sphere */
+	
+	/********************************************************************************/
+	/*********************    if the ray intersects a sphere    *********************/
+	/********************************************************************************/
 	if (minSphereDistance != -1) {
 
 		pixel.x = s.color_diffuse[0];
@@ -338,48 +355,65 @@ Pixel rayTrace(Ray ray) {
 				bool dummy2;
 				if (!(sphere.rayIntersect(shadowRay, dummy1, dummy2))) {
 
-					Ray L = shadowRay;
-					double LdotN = (L.direction[0] * nIntersect[0])
-						+ (L.direction[1] * nIntersect[1])
-						+ (L.direction[2] * nIntersect[2]);
-					if (LdotN < 0) LdotN = 0;
+					for (int k = 0; k < num_triangles; k++) {
+						Triangle triangle = triangles[k];
+						double d1, d2, d3, d4;
 
-					Ray R = L;
-					R.direction[0] = 2 * LdotN * nIntersect[0] - L.direction[0];
-					R.direction[1] = 2 * LdotN * nIntersect[1] - L.direction[1];
-					R.direction[2] = 2 * LdotN * nIntersect[2] - L.direction[2];
-					// normalize
-					double xRMag = R.direction[0] - R.origin[0];
-					double yRMag = R.direction[1] - R.origin[1];
-					double zRMag = R.direction[2] - R.origin[2];
-					double Rmag = sqrt((xRMag * xRMag) + (yRMag * yRMag) + (zRMag * zRMag));
-					R.direction[0] /= Rmag;
-					R.direction[1] /= Rmag;
-					R.direction[2] /= Rmag;
+						if (!(triangle.rayIntersect(shadowRay, d1, d2, d3, d4))) {
 
-					double RdotV = (R.direction[0] * (-pIntersect[0]))
-						+ (R.direction[1] * (-pIntersect[1]))
-						+ (R.direction[2] * (-pIntersect[2]));
-					if (RdotV < 0) RdotV = 0;
+							Ray L = shadowRay;
+							double LdotN = (L.direction[0] * nIntersect[0])
+								+ (L.direction[1] * nIntersect[1])
+								+ (L.direction[2] * nIntersect[2]);
+							if (LdotN < 0) LdotN = 0;
+							else if (LdotN > 1) LdotN = 1;
 
-					if (s.shininess < 1) {
-						s.shininess = 1;
+							Ray R = L;
+							R.direction[0] = 2 * LdotN * nIntersect[0] - L.direction[0];
+							R.direction[1] = 2 * LdotN * nIntersect[1] - L.direction[1];
+							R.direction[2] = 2 * LdotN * nIntersect[2] - L.direction[2];
+							// normalize
+							double xRMag = R.direction[0] - R.origin[0];
+							double yRMag = R.direction[1] - R.origin[1];
+							double zRMag = R.direction[2] - R.origin[2];
+							double Rmag = sqrt((xRMag * xRMag) + (yRMag * yRMag) + (zRMag * zRMag));
+							R.direction[0] /= Rmag;
+							R.direction[1] /= Rmag;
+							R.direction[2] /= Rmag;
+
+							double RdotV = (R.direction[0] * (-pIntersect[0]))
+								+ (R.direction[1] * (-pIntersect[1]))
+								+ (R.direction[2] * (-pIntersect[2]));
+							if (RdotV < 0) RdotV = 0;
+							else if (RdotV > 1) RdotV = 1;
+
+							if (s.shininess < 1) {
+								s.shininess = 1;
+							}
+
+							/* calculate light intensity */
+							double colorX = l.color[0] * ((s.color_diffuse[0] * LdotN) + pow((s.color_specular[0] * RdotV), s.shininess));
+							double colorY = l.color[1] * ((s.color_diffuse[1] * LdotN) + pow((s.color_specular[1] * RdotV), s.shininess));
+							double colorZ = l.color[2] * ((s.color_diffuse[2] * LdotN) + pow((s.color_specular[2] * RdotV), s.shininess));
+
+							/* clamp to 0,1 */
+							/* if color < 0, color = 0, else if color > 1, color = 1, else no change*/
+							colorX = (colorX < 0) ? 0 : ((colorX > 1) ? 1 : colorX);
+							colorY = (colorY < 0) ? 0 : ((colorY > 1) ? 1 : colorY);
+							colorZ = (colorZ < 0) ? 0 : ((colorZ > 1) ? 1 : colorZ);
+
+							pixel.x += colorX;
+							pixel.y += colorY;
+							pixel.z += colorZ;
+						}
+						/* if the point is in a shadow */
+						else {
+							pixel.x /= 2;
+							pixel.y /= 2;
+							pixel.z /= 2;
+						}
 					}
 
-					/* calculate light intensity */
-					double colorX = l.color[0] * ((s.color_diffuse[0] * LdotN) + pow((s.color_specular[0] * RdotV), s.shininess));
-					double colorY = l.color[1] * ((s.color_diffuse[1] * LdotN) + pow((s.color_specular[1] * RdotV), s.shininess));
-					double colorZ = l.color[2] * ((s.color_diffuse[2] * LdotN) + pow((s.color_specular[2] * RdotV), s.shininess));
-
-					/* clamp to 0,1 */
-					/* if color < 0, color = 0, else if color > 1, color = 1, else no change*/
-					colorX = (colorX < 0) ? 0 : ((colorX > 1) ? 1 : colorX);
-					colorY = (colorY < 0) ? 0 : ((colorY > 1) ? 1 : colorY);
-					colorZ = (colorZ < 0) ? 0 : ((colorZ > 1) ? 1 : colorZ);
-
-					pixel.x += colorX;
-					pixel.y += colorY;
-					pixel.z += colorZ;
 				}
 				/* if the point is in a shadow */
 				else {
@@ -390,86 +424,83 @@ Pixel rayTrace(Ray ray) {
 			}
 		}
 	}
-	/* if the ray intersects a triangle */
+	
+	/********************************************************************************/
+	/********************    if the ray intersects a triangle    ********************/
+	/********************************************************************************/
 	else if (minTriangleDistance != -1) {
-		pixel.x = s.color_diffuse[0];
-		pixel.y = s.color_diffuse[1];
-		pixel.z = s.color_diffuse[2];
 
 		/* calculate intersection point on triangle */
-		pIntersect[0] = ray.origin[0] + ray.direction[0] * minTriangleDistance;
-		pIntersect[1] = ray.origin[1] + ray.direction[1] * minTriangleDistance;
-		pIntersect[2] = ray.origin[2] + ray.direction[2] * minTriangleDistance;
-
-		/* calculate barycentric coordinates of triangle */
-		double triArea = area(t.vertex[0].position, t.vertex[1].position, t.vertex[2].position);
-
-		double alpha = area(pIntersect, t.vertex[1].position, t.vertex[2].position) / triArea;
-		double beta = area(t.vertex[0].position, pIntersect, t.vertex[2].position) / triArea;
-		double gamma = area(t.vertex[0].position, t.vertex[1].position, pIntersect) / triArea;
+		for (int i = 0; i < 3; i++) {
+			pIntersect[i] = (alpha * t.vertex[0].position[i])
+				+ (beta * t.vertex[1].position[i])
+				+ (gamma * t.vertex[2].position[i]);
+		}
 
 		/* calculate interpolated normal of intersection point on triangle */
 		double nMag = sqrt(
-			pow((alpha * t.vertex[0].normal[0])
-			+ (beta * t.vertex[1].normal[0])
-			+ (gamma * t.vertex[2].normal[0]), 2)
+			pow((alpha	* t.vertex[0].normal[0])
+			+ (beta		* t.vertex[1].normal[0])
+			+ (gamma	* t.vertex[2].normal[0]), 2)
 			+
-			pow((alpha * t.vertex[0].normal[1])
-			+ (beta * t.vertex[1].normal[1])
-			+ (gamma * t.vertex[2].normal[1]), 2)
+			pow((alpha	* t.vertex[0].normal[1])
+			+ (beta		* t.vertex[1].normal[1])
+			+ (gamma	* t.vertex[2].normal[1]), 2)
 			+
-			pow((alpha * t.vertex[0].normal[2])
-			+ (beta * t.vertex[1].normal[2])
-			+ (gamma * t.vertex[2].normal[2]), 2)
+			pow((alpha	* t.vertex[0].normal[2])
+			+ (beta		* t.vertex[1].normal[2])
+			+ (gamma	* t.vertex[2].normal[2]), 2)
 			);
 		double normal[3];
 		for (int i = 0; i < 3; i++) {
 			normal[i] = ((alpha * t.vertex[0].normal[i])
 				+ (beta * t.vertex[1].normal[i])
-				+ (gamma * t.vertex[2].normal[i])) / nMag;
+				+ (gamma * t.vertex[2].normal[i]));// / nMag;
 		}
 
 		/* calculate interpolated diffuse color */
 		double dMag = sqrt(
-			pow((alpha * t.vertex[0].color_diffuse[0])
-			+ (beta * t.vertex[1].color_diffuse[0])
-			+ (gamma * t.vertex[2].color_diffuse[0]), 2)
+			pow((alpha	* t.vertex[0].color_diffuse[0])
+			+ (beta		* t.vertex[1].color_diffuse[0])
+			+ (gamma	* t.vertex[2].color_diffuse[0]), 2)
 			+
-			pow((alpha * t.vertex[0].color_diffuse[1])
-			+ (beta * t.vertex[1].color_diffuse[1])
-			+ (gamma * t.vertex[2].color_diffuse[1]), 2)
+			pow((alpha	* t.vertex[0].color_diffuse[1])
+			+ (beta		* t.vertex[1].color_diffuse[1])
+			+ (gamma	* t.vertex[2].color_diffuse[1]), 2)
 			+
-			pow((alpha * t.vertex[0].color_diffuse[2])
-			+ (beta * t.vertex[1].color_diffuse[2])
-			+ (gamma * t.vertex[2].color_diffuse[2]), 2)
+			pow((alpha	* t.vertex[0].color_diffuse[2])
+			+ (beta		* t.vertex[1].color_diffuse[2])
+			+ (gamma	* t.vertex[2].color_diffuse[2]), 2)
 			);
 		double diffuse_color[3];
 		for (int i = 0; i < 3; i++) {
 			diffuse_color[i] = ((alpha * t.vertex[0].color_diffuse[i])
 				+ (beta * t.vertex[1].color_diffuse[i])
-				+ (gamma * t.vertex[2].color_diffuse[i])) / dMag;
+				+ (gamma * t.vertex[2].color_diffuse[i]));// / dMag;
 		}
-		//std::cout << "  color: " << diffuse_color[2];
+		pixel.x = diffuse_color[0];
+		pixel.y = diffuse_color[1];
+		pixel.z = diffuse_color[2];
 
 		/* calculate interpolated specular color */
 		double sMag = sqrt(
-			pow((alpha * t.vertex[0].color_specular[0])
-			+ (beta * t.vertex[1].color_specular[0])
-			+ (gamma * t.vertex[2].color_specular[0]), 2)
+			pow((alpha	* t.vertex[0].color_specular[0])
+			+ (beta		* t.vertex[1].color_specular[0])
+			+ (gamma	* t.vertex[2].color_specular[0]), 2)
 			+
-			pow((alpha * t.vertex[0].color_specular[1])
-			+ (beta * t.vertex[1].color_specular[1])
-			+ (gamma * t.vertex[2].color_specular[1]), 2)
+			pow((alpha	* t.vertex[0].color_specular[1])
+			+ (beta		* t.vertex[1].color_specular[1])
+			+ (gamma	* t.vertex[2].color_specular[1]), 2)
 			+
-			pow((alpha * t.vertex[0].color_specular[2])
-			+ (beta * t.vertex[1].color_specular[2])
-			+ (gamma * t.vertex[2].color_specular[2]), 2)
+			pow((alpha	* t.vertex[0].color_specular[2])
+			+ (beta		* t.vertex[1].color_specular[2])
+			+ (gamma	* t.vertex[2].color_specular[2]), 2)
 			);
 		double specular_color[3];
 		for (int i = 0; i < 3; i++) {
 			specular_color[i] = ((alpha * t.vertex[0].color_specular[i])
-				+ (beta * t.vertex[1].color_specular[i])
-				+ (gamma * t.vertex[2].color_specular[i])) / sMag;
+				+ (beta	* t.vertex[1].color_specular[i])
+				+ (gamma * t.vertex[2].color_specular[i]));// / sMag;
 		}
 
 		/* for each light source, fire shadow ray */
@@ -501,13 +532,15 @@ Pixel rayTrace(Ray ray) {
 			for (int j = 0; j < num_triangles; j++) {
 				Triangle triangle = triangles[j];
 				/* determine if shadow ray is blocked by any objects */
-				double dummy3, dummy4, dummy5;
-				if (!(triangle.rayIntersect(shadowRay, dummy3, dummy4, dummy5))) {
+				double dummy3, dummy4, dummy5, dummy6;
+
+				if ((triangle.rayIntersect(shadowRay, dummy3, dummy4, dummy5, dummy6))) {
 					Ray L = shadowRay;
 					double LdotN = (L.direction[0] * normal[0])
 						+ (L.direction[1] * normal[1])
 						+ (L.direction[2] * normal[2]);
 					if (LdotN < 0) LdotN = 0;
+					else if (LdotN > 1) LdotN = 1;
 
 					Ray R = L;
 					R.direction[0] = 2 * LdotN * normal[0] - L.direction[0];
@@ -526,6 +559,7 @@ Pixel rayTrace(Ray ray) {
 						+ (R.direction[1] * (-pIntersect[1]))
 						+ (R.direction[2] * (-pIntersect[2]));
 					if (RdotV < 0) RdotV = 0;
+					else if (RdotV > 1) RdotV = 1;
 
 					if (s.shininess < 1) {
 						s.shininess = 1;
@@ -557,13 +591,6 @@ Pixel rayTrace(Ray ray) {
 				}
 			}
 		}
-	}
-	/* if the ray does not intersect an object */
-	/* determine if background is in a shadow */
-	else {
-		//pixel.x = 0.1;
-		//pixel.y = 0.1;
-		//pixel.z = 0.1;
 	}
 
 	return pixel;
