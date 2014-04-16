@@ -113,6 +113,22 @@ public:
 
 		return true;
 	}
+
+	bool shadowIntersect(Ray shadowRay) {
+		double x = shadowRay.origin[0] - position[0];
+		double y = shadowRay.origin[1] - position[1];
+		double z = shadowRay.origin[2] - position[2];
+
+		// a = 1 = x_direction^2 + y_direction^2 + z_direction^2
+		double b = 2 * ((shadowRay.direction[0] * x) + (shadowRay.direction[1] * y) + (shadowRay.direction[2] * z));
+		double c = (x * x) + (y * y) + (z * z) - (radius * radius);
+
+		double g = (b * b) - (4 * c);
+		if (g < 0)
+			return false;	// no intersection
+		else
+			return true;
+	}
 };
 
 class Triangle {
@@ -176,6 +192,73 @@ public:
 		alpha = area(pointProjected, v1Projected, v2Projected) / triArea;
 		beta = area(v0Projected, pointProjected, v2Projected) / triArea;
 		gamma = area(v0Projected, v1Projected, pointProjected) / triArea;
+
+		if (alpha * beta >= 0 && beta * gamma >= 0) {
+			/* point is in triangle */
+			return true;
+		}
+		else {
+			return false;
+		}
+	}
+
+	bool shadowIntersect(Ray shadowRay) {
+
+		double edge1[3], edge2[3];
+		/* calculate edges */
+		for (int i = 0; i < 3; i++) {
+			edge1[i] = vertex[1].position[i] - vertex[0].position[i];
+			edge2[i] = vertex[2].position[i] - vertex[0].position[i];
+		}
+
+		/* calculate normal of plane containing triangle */
+		double planeNormal[3];
+		/* planeNormal = edge1 x edge2 */
+		cross(planeNormal, edge1, edge2);
+		/* normalize normal */
+		double mag = sqrt((planeNormal[0] * planeNormal[0])
+			+ (planeNormal[1] * planeNormal[1])
+			+ (planeNormal[2] * planeNormal[2]));
+		planeNormal[0] /= mag;
+		planeNormal[1] /= mag;
+		planeNormal[2] /= mag;
+
+		/* calculate intersection of ray with plane */
+		/* t = - (origin - vertex) .dot. normal / direction .dot. normal */
+		double ov[3];	// origin - vertex
+		ov[0] = shadowRay.origin[0] - vertex[0].position[0];
+		ov[1] = shadowRay.origin[1] - vertex[0].position[1];
+		ov[2] = shadowRay.origin[2] - vertex[0].position[2];
+
+		// ray = O + tD
+		double DdotN = dot(shadowRay.direction, planeNormal);
+		if (DdotN == 0) return false;	// ray parallel to plane
+
+		double t = -dot(ov, planeNormal) / DdotN;
+		// QUESTIONABLE >>>
+		if (t < 0.00001) return false;	// intersection is behind origin
+
+		/* calculate intersection point */
+		double point[3];
+		point[0] = shadowRay.origin[0] + (t * shadowRay.direction[0]);
+		point[1] = shadowRay.origin[1] + (t * shadowRay.direction[1]);
+		point[2] = shadowRay.origin[2] + (t * shadowRay.direction[2]);
+
+		/* test is point is inside triangle using barycentric coordinates */
+		double pointProjected[2], v0Projected[2], v1Projected[2], v2Projected[2];
+
+		for (int i = 0; i < 2; i++) {
+			pointProjected[i] = point[i];
+			v0Projected[i] = vertex[0].position[i];
+			v1Projected[i] = vertex[1].position[i];
+			v2Projected[i] = vertex[2].position[i];
+		}
+
+		double triArea = area(v0Projected, v1Projected, v2Projected);
+
+		double alpha = area(pointProjected, v1Projected, v2Projected) / triArea;
+		double beta = area(v0Projected, pointProjected, v2Projected) / triArea;
+		double gamma = area(v0Projected, v1Projected, pointProjected) / triArea;
 
 		if (alpha * beta >= 0 && beta * gamma >= 0) {
 			/* point is in triangle */
@@ -268,7 +351,7 @@ Ray createShadowRay(double p[3], Light l) {
 	return shadowRay;
 }
 
-Pixel calculateSphereColor(Sphere s, Ray shadowRay, Light l, double pIntersect[3], bool insideSphere) {
+Pixel calculateSphereColor(const Sphere s, const Ray shadowRay, const Light l, const double pIntersect[3], const bool insideSphere) {
 
 	double nIntersect[3];
 	/* calculate normal of intersection point on sphere */
@@ -301,12 +384,16 @@ Pixel calculateSphereColor(Sphere s, Ray shadowRay, Light l, double pIntersect[3
 	R.direction[2] /= Rmag;
 
 	// pIntersect normalize
-	double pMag = sqrt((pIntersect[0] * pIntersect[0]) + (pIntersect[1] * pIntersect[1]) + (pIntersect[2] * pIntersect[2]));
-	pIntersect[0] /= -pMag;
-	pIntersect[1] /= -pMag;
-	pIntersect[2] /= -pMag;
+	double point[3];
+	point[0] = pIntersect[0];
+	point[1] = pIntersect[1];
+	point[2] = pIntersect[2];
+	double pMag = sqrt((point[0] * point[0]) + (point[1] * point[1]) + (point[2] * point[2]));
+	point[0] /= -pMag;
+	point[1] /= -pMag;
+	point[2] /= -pMag;
 
-	double RdotV = dot(R.direction, pIntersect);
+	double RdotV = dot(R.direction, point);
 	RdotV = (RdotV < 0) ? 0 : ((RdotV > 1) ? 1 : RdotV);
 
 	/* calculate light intensity */
@@ -328,7 +415,7 @@ Pixel calculateSphereColor(Sphere s, Ray shadowRay, Light l, double pIntersect[3
 	return p;
 }
 
-Pixel calculateTriangleColor(Triangle t, Ray shadowRay, Light l, double diffuse_color[3], double pIntersect[3], 
+Pixel calculateTriangleColor(const Triangle t, const Ray shadowRay, const Light l, const double diffuse_color[3], const double pIntersect[3],
 	double normal[3], double alpha, double beta, double gamma) {
 
 	Ray L = shadowRay;
@@ -349,12 +436,16 @@ Pixel calculateTriangleColor(Triangle t, Ray shadowRay, Light l, double diffuse_
 	R.direction[2] /= Rmag;
 
 	// pIntersect normalize
-	double pMag = sqrt((pIntersect[0] * pIntersect[0]) + (pIntersect[1] * pIntersect[1]) + (pIntersect[2] * pIntersect[2]));
-	pIntersect[0] /= -pMag;
-	pIntersect[1] /= -pMag;
-	pIntersect[2] /= -pMag;
+	double point[3];
+	point[0] = pIntersect[0];
+	point[1] = pIntersect[1];
+	point[2] = pIntersect[2];
+	double pMag = sqrt((point[0] * point[0]) + (point[1] * point[1]) + (point[2] * point[2]));
+	point[0] /= -pMag;
+	point[1] /= -pMag;
+	point[2] /= -pMag;
 
-	double RdotV = dot(R.direction, pIntersect);
+	double RdotV = dot(R.direction, point);
 	RdotV = (RdotV < 0) ? 0 : ((RdotV > 1) ? 1 : RdotV);
 
 	/* calculate light intensity */
@@ -448,40 +539,38 @@ Pixel rayTrace(Ray ray) {
 			/* unit vector to the light */
 			Ray shadowRay = createShadowRay(pIntersect, l);
 
-			///////////// this should not be here ////////////////////////////////////////////////////////////
-			Pixel pixelColor = calculateSphereColor(s, shadowRay, l, pIntersect, insideSphere);
-			pixel.x += pixelColor.x;
-			pixel.y += pixelColor.y;
-			pixel.z += pixelColor.z;
+			bool isInShadow = false;
 
-			if (true) {
-				/* for each unblocked shadow ray, evaluate local phong model for */
-				/* that light, and add result to pixel color */
-				for (int j = 0; j < num_spheres; j++) {
-					Sphere sphere = spheres[j];
-					/* determine if shadow ray is blocked by any objects */
-					double dummy1;
-					bool dummy2;
-					if (!(sphere.rayIntersect(shadowRay, dummy1, dummy2))) {
+			/* for each unblocked shadow ray, evaluate local phong model for */
+			/* that light, and add result to pixel color */
+			for (int j = 0; j < num_spheres; j++) {
+				Sphere sphere = spheres[j];
+				/* determine if shadow ray is blocked by any objects */
+				if (sphere.shadowIntersect(shadowRay)) {
+					isInShadow = true;
+					break;
+				}
+			}
 
-						for (int k = 0; k < num_triangles; k++) {
-							Triangle triangle = triangles[k];
-							double d1, d2, d3, d4;
-							if (!(triangle.rayIntersect(shadowRay, d1, d2, d3, d4))) {
-
-								/* if no objects are blocking the shadow ray, calculate color */
-
-								Pixel pixelColor = calculateSphereColor(s, shadowRay, l, pIntersect, insideSphere);
-
-								pixel.x += pixelColor.x;
-								pixel.y += pixelColor.y;
-								pixel.z += pixelColor.z;
-							}
-						}
-
+			if (!isInShadow) {
+				for (int k = 0; k < num_triangles; k++) {
+					Triangle triangle = triangles[k];
+					if (triangle.shadowIntersect(shadowRay)) {
+						isInShadow = true;
+						break;
 					}
 				}
 			}
+
+			/* if no objects are blocking the shadow ray, calculate color */
+			if (true){//!isInShadow) {
+				Pixel pixelColor = calculateSphereColor(s, shadowRay, l, pIntersect, insideSphere);
+
+				pixel.x += pixelColor.x;
+				pixel.y += pixelColor.y;
+				pixel.z += pixelColor.z;
+			}
+
 		}
 
 	}
@@ -500,14 +589,6 @@ Pixel rayTrace(Ray ray) {
 		point[1] = ray.origin[1] + (minTriangleDistance * ray.direction[1]);
 		point[2] = ray.origin[2] + (minTriangleDistance * ray.direction[2]);
 
-		//double pIntersect[3];
-		///* calculate intersection point on triangle */
-		//for (int i = 0; i < 3; i++) {
-		//	pIntersect[i] = (alpha * t.vertex[0].position[i])
-		//		+ (beta * t.vertex[1].position[i])
-		//		+ (gamma * t.vertex[2].position[i]);
-		//}
-
 		/* calculate interpolated diffuse color */
 		double diffuse_color[3];
 		for (int i = 0; i < 3; i++) {
@@ -515,15 +596,6 @@ Pixel rayTrace(Ray ray) {
 				+ (beta * t.vertex[1].color_diffuse[i])
 				+ (gamma * t.vertex[2].color_diffuse[i]));
 		}
-
-		/*std::cout << std::endl;
-		std::cout << "point[0] : " << point[0] << std::endl;
-		std::cout << "point[1] : " << point[1] << std::endl;
-		std::cout << "point[2] : " << point[2] << std::endl;
-		std::cout << "intersect[0] : " << pIntersect[0] << std::endl;
-		std::cout << "intersect[1] : " << pIntersect[1] << std::endl;
-		std::cout << "intersect[2] : " << pIntersect[2] << std::endl;
-		std::cout << std::endl;*/
 
 		/* calculate interpolated normal of intersection point on triangle */
 		double normal[3];
@@ -551,37 +623,38 @@ Pixel rayTrace(Ray ray) {
 			/* unit vector to the light */
 			Ray shadowRay = createShadowRay(point, l);
 
-			//Pixel pixelColor = calculateTriangleColor(t, shadowRay, l, diffuse_color, point, normal, alpha, beta, gamma);
+			bool isInShadow = false;
 
-			//pixel.x += pixelColor.x;
-			//pixel.y += pixelColor.y;
-			//pixel.z += pixelColor.z;
+			/* for each unblocked shadow ray, evaluate local phong model for */
+			/* that light, and add result to pixel color */
+			for (int j = 0; j < num_spheres; j++) {
+				Sphere sphere = spheres[j];
+				/* determine if shadow ray is blocked by any objects */
+				if (sphere.shadowIntersect(shadowRay)) {
+					isInShadow = true;
+					break;
+				}
+			}
 
-			if (true) {
-				/* for each unblocked shadow ray, evaluate local phong model for */
-				/* that light, and add result to pixel color */
-				for (int j = 0; j < num_spheres; j++) {
-					Sphere sphere = spheres[j];
+			if (!isInShadow) {
+				for (int j = 0; j < num_triangles; j++) {
+					Triangle triangle = triangles[j];
 					/* determine if shadow ray is blocked by any objects */
-					double dummy1;
-					bool dummy2;
-					if (!(sphere.rayIntersect(shadowRay, dummy1, dummy2))) {
-						for (int j = 0; j < num_triangles; j++) {
-							Triangle triangle = triangles[j];
-							/* determine if shadow ray is blocked by any objects */
-							double dummy3, dummy4, dummy5, dummy6;
-							if (!(triangle.rayIntersect(shadowRay, dummy3, dummy4, dummy5, dummy6))) {
-								/* if no objects are blocking the shadow ray, calculate color */
-
-								Pixel pixelColor = calculateTriangleColor(t, shadowRay, l, diffuse_color, point, normal, alpha, beta, gamma);
-
-								pixel.x += pixelColor.x;
-								pixel.y += pixelColor.y;
-								pixel.z += pixelColor.z;
-							}
-						}
+					double dummy3, dummy4, dummy5, dummy6;
+					if (triangle.shadowIntersect(shadowRay)) {
+						isInShadow = true;
+						break;
 					}
 				}
+			}
+
+			/* if no objects are blocking the shadow ray, calculate color */
+			if (!isInShadow) {
+				Pixel pixelColor = calculateTriangleColor(t, shadowRay, l, diffuse_color, point, normal, alpha, beta, gamma);
+				
+				pixel.x += pixelColor.x;
+				pixel.y += pixelColor.y;
+				pixel.z += pixelColor.z;
 			}
 		}
 	}
@@ -614,7 +687,7 @@ void castRays() {
 		{
 			double x = xLeft + (1.0 * m + 0.5) * stepWidth;
 			double y = yBottom + (1.0 * n + 0.5) * stepHeight;
-		
+
 			double magnitude = sqrt(x*x + y*y + 1); // z = -1, so z*z = 1
 
 			ray.direction[0] = x / magnitude;
