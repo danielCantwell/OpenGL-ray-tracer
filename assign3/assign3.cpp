@@ -85,7 +85,7 @@ public:
 		double y = ray.origin[1] - position[1];
 		double z = ray.origin[2] - position[2];
 
-		// a = 1 = x_direction^2 + y_direction^2 + z_direction^2
+		//double a = (x * x) + (y * y) + (z * z); = 1
 		double b = 2 * ((ray.direction[0] * x) + (ray.direction[1] * y) + (ray.direction[2] * z));
 		double c = (x * x) + (y * y) + (z * z) - (radius * radius);
 
@@ -98,6 +98,9 @@ public:
 		double t0 = (-b - sqrt(g)) / 2;	// point along ray which enters/exits the sphere
 		double t1 = (-b + sqrt(g)) / 2;	// point along ray which exits/enters the sphere
 
+		if (t0 < 0 && t1 < 0) {
+			return false;
+		}
 		// determine which point is closer
 		if (t0 < 0) {
 			minT = t1;
@@ -115,19 +118,30 @@ public:
 	}
 
 	bool shadowIntersect(Ray shadowRay) {
+
 		double x = shadowRay.origin[0] - position[0];
 		double y = shadowRay.origin[1] - position[1];
 		double z = shadowRay.origin[2] - position[2];
 
-		// a = 1 = x_direction^2 + y_direction^2 + z_direction^2
+		//double a = (x * x) + (y * y) + (z * z); = 1
 		double b = 2 * ((shadowRay.direction[0] * x) + (shadowRay.direction[1] * y) + (shadowRay.direction[2] * z));
 		double c = (x * x) + (y * y) + (z * z) - (radius * radius);
 
 		double g = (b * b) - (4 * c);
-		if (g < 0)
+		if (g < 0) {
 			return false;	// no intersection
-		else
+		}
+		
+		double t0 = (-b - sqrt(g)) / 2;	// point along ray which enters/exits the sphere
+		double t1 = (-b + sqrt(g)) / 2;	// point along ray which exits/enters the sphere
+
+		if (t0 < 0 || t1 < 0) {
+			return false;
+		}
+		else {
 			return true;
+		}
+		
 	}
 };
 
@@ -415,8 +429,9 @@ Pixel calculateSphereColor(const Sphere s, const Ray shadowRay, const Light l, c
 	return p;
 }
 
-Pixel calculateTriangleColor(const Triangle t, const Ray shadowRay, const Light l, const double diffuse_color[3], const double pIntersect[3],
-	double normal[3], double alpha, double beta, double gamma) {
+Pixel calculateTriangleColor(const Triangle t, const Ray shadowRay, const Light l, const double diffuse_color[3], 
+	const double specular_color[3], const double shininess, const double pIntersect[3], double normal[3],
+	const double alpha, const double beta, const double gamma) {
 
 	Ray L = shadowRay;
 	double LdotN = dot(L.direction, normal);
@@ -449,9 +464,9 @@ Pixel calculateTriangleColor(const Triangle t, const Ray shadowRay, const Light 
 	RdotV = (RdotV < 0) ? 0 : ((RdotV > 1) ? 1 : RdotV);
 
 	/* calculate light intensity */
-	double colorX = l.color[0] * ((diffuse_color[0] * LdotN));// +specular_color[0] * pow(RdotV, shininess));
-	double colorY = l.color[1] * ((diffuse_color[1] * LdotN));// +specular_color[1] * pow(RdotV, shininess));
-	double colorZ = l.color[2] * ((diffuse_color[2] * LdotN));// +specular_color[2] * pow(RdotV, shininess));
+	double colorX = l.color[0] * ((diffuse_color[0] * LdotN) + specular_color[0] * pow(RdotV, shininess));
+	double colorY = l.color[1] * ((diffuse_color[1] * LdotN) + specular_color[1] * pow(RdotV, shininess));
+	double colorZ = l.color[2] * ((diffuse_color[2] * LdotN) + specular_color[2] * pow(RdotV, shininess));
 
 	/* clamp to 0,1 */
 	/* if color < 0, color = 0, else if color > 1, color = 1, else no change*/
@@ -492,16 +507,20 @@ Pixel rayTrace(Ray ray) {
 
 	Triangle t;
 	double alpha, beta, gamma;
+	double tempAlpha, tempBeta, tempGamma;
 	double minTriangleDistance = -1;
 
 	/* test if the ray intersects a triangle */
 	for (int i = 0; i < num_triangles; i++) {
 		Triangle triangle = triangles[i];
 		double minT;
-		if (triangle.rayIntersect(ray, minT, alpha, beta, gamma)) {
+		if (triangle.rayIntersect(ray, minT, tempAlpha, tempBeta, tempGamma)) {
 			if (minTriangleDistance == -1 || minT < minTriangleDistance) {
 				minTriangleDistance = minT;
 				t = triangle;
+				alpha = tempAlpha;
+				beta = tempBeta;
+				gamma = tempGamma;
 			}
 		}
 	}
@@ -563,7 +582,7 @@ Pixel rayTrace(Ray ray) {
 			}
 
 			/* if no objects are blocking the shadow ray, calculate color */
-			if (true){//!isInShadow) {
+			if (!isInShadow) {
 				Pixel pixelColor = calculateSphereColor(s, shadowRay, l, pIntersect, insideSphere);
 
 				pixel.x += pixelColor.x;
@@ -640,7 +659,6 @@ Pixel rayTrace(Ray ray) {
 				for (int j = 0; j < num_triangles; j++) {
 					Triangle triangle = triangles[j];
 					/* determine if shadow ray is blocked by any objects */
-					double dummy3, dummy4, dummy5, dummy6;
 					if (triangle.shadowIntersect(shadowRay)) {
 						isInShadow = true;
 						break;
@@ -650,7 +668,8 @@ Pixel rayTrace(Ray ray) {
 
 			/* if no objects are blocking the shadow ray, calculate color */
 			if (!isInShadow) {
-				Pixel pixelColor = calculateTriangleColor(t, shadowRay, l, diffuse_color, point, normal, alpha, beta, gamma);
+				Pixel pixelColor = calculateTriangleColor(
+					t, shadowRay, l, diffuse_color, specular_color, shininess, point, normal, alpha, beta, gamma);
 				
 				pixel.x += pixelColor.x;
 				pixel.y += pixelColor.y;
@@ -663,7 +682,6 @@ Pixel rayTrace(Ray ray) {
 }
 
 void castRays() {
-
 	std::cout << "\ncasting rays\n";
 
 	// ray origin = camera origin = 0,0,0
